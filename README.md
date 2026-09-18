@@ -1,6 +1,8 @@
 # Herdr Better Worktrees
 
-Interactive Herdr popup for repositories using the canonical layout:
+Git worktrees make it easy to keep several branches checked out at once, but they are much nicer to use when every checkout has a predictable home. Herdr Better Worktrees exists to preserve that layout instead of letting the workspace manager decide where worktrees live. It gives you one fast popup for creating, opening, inspecting, fetching, and safely removing them without hiding the Git operations underneath.
+
+The plugin is built around the canonical embedded-bare layout, where repository metadata and all linked checkouts live together under one portable root:
 
 ```text
 repo/
@@ -10,7 +12,7 @@ repo/
   topic/      # linked worktree
 ```
 
-Git remains the source of truth. The plugin lists porcelain worktree data, checks every checkout's status, fetches, initializes, clones, creates, and safely removes through argument-safe Git commands. Herdr is only used to host the popup and to open an existing checkout. By default a checkout opens as a standalone workspace; nested Herdr worktree grouping remains available as an optional open mode.
+Git remains the source of truth: the manager reads porcelain worktree data, checks every checkout's status, and performs clone, initialization, fetch, creation, and removal through argument-safe Git commands. Herdr only hosts the popup and opens existing checkouts. They open as standalone workspaces by default, while Herdr's nested worktree grouping remains available as an optional mode.
 
 ![Herdr Better Worktrees manager menu](assets/worktree-manager.png)
 
