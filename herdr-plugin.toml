@@ -1,0 +1,26 @@
+id = "herdr-better-worktrees"
+name = "Herdr Better Worktrees"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Manage canonical embedded .bare Git worktrees from a Herdr popup"
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["npm", "ci"]
+
+[[build]]
+command = ["npm", "run", "build"]
+
+[[actions]]
+id = "manage"
+title = "Manage canonical Git worktrees"
+contexts = ["global"]
+command = ["node", "dist/open-popup.js"]
+
+[[panes]]
+id = "manager"
+title = "Worktree manager"
+placement = "popup"
+width = "90%"
+height = "82%"
+command = ["node", "--input-type=module", "--eval", "await import(process.env.HERDR_PLUGIN_ROOT + '/dist/manager.js')"]
