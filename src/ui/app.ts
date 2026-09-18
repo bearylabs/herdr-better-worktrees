@@ -168,7 +168,7 @@ export class ManagerApp {
       this.dispatch({ type: "removed", token: effect.token, notice });
       return;
     }
-    let workspaceName = this.state.sourceWorkspaceName;
+    let workspaceName = this.state.workspaceNameOverride ?? this.state.sourceWorkspaceName;
     if (effect.mode === "workspace" && !workspaceName) {
       workspaceName = await this.herdr.workspaceName(this.state.sourceWorkspaceId, signal);
       if (workspaceName && !signal.aborted) this.dispatch({ type: "workspace-name", token: effect.token, name: workspaceName });

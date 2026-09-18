@@ -22,6 +22,7 @@ export type ManagerState = {
   readonly openMode: WorktreeOpenMode;
   readonly sourceWorkspaceId?: string;
   readonly sourceWorkspaceName?: string;
+  readonly workspaceNameOverride: string | undefined;
   readonly form: CreateForm;
   readonly cloneForm: CloneForm;
   readonly initializeForm: InitializeForm;
@@ -69,7 +70,8 @@ const initializeFields: readonly InitializeField[] = ["destination", "initialBra
 export function initialState(size: { width: number; height: number }, cwd = ""): ManagerState {
   return {
     viewport: normalizedSize(size.width, size.height), mode: "list", selected: 0, selectedPath: undefined, cwd,
-    openMode: "workspace", form: { directory: "", branch: "", base: "" }, cloneForm: { url: "", destination: "" },
+    openMode: "workspace", workspaceNameOverride: undefined,
+    form: { directory: "", branch: "", base: "" }, cloneForm: { url: "", destination: "" },
     initializeForm: { destination: "", initialBranch: "" }, field: 0, caret: 0,
     removeTarget: undefined, deleteBranch: false, operation: "discovering", message: "Discovering canonical worktree root…",
     loadToken: 0, statusToken: 0, operationToken: 0,
@@ -122,6 +124,9 @@ export function update(state: ManagerState, event: Event): Update {
     return result({
       ...state, inventory: event.inventory, selected, ...(selectedPath ? { selectedPath } : { selectedPath: undefined }),
       ...(event.cwd ? { cwd: event.cwd } : {}),
+      workspaceNameOverride: event.notice === "Repository initialized"
+        ? event.inventory.root.name
+        : event.notice === "Repository cloned" ? undefined : state.workspaceNameOverride,
       mode: "list", operation: "idle", message: event.notice, statusToken,
       form: event.notice === "Worktree created" ? { directory: "", branch: "", base: "" } : state.form,
       cloneForm: event.notice === "Repository cloned" ? { url: "", destination: "" } : state.cloneForm,

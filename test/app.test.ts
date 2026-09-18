@@ -92,8 +92,9 @@ test("successful clone switches the manager to the new canonical root", async ()
   app.stop();
 });
 
-test("successful initialization switches the manager to the new canonical root", async () => {
+test("successful initialization switches roots and opens under the repository name", async () => {
   const terminal = new FakeTerminal();
+  let openedWorkspaceName: string | undefined;
   const initialized = {
     root: { path: "/projects/new-project", commonDirectory: "/projects/new-project/.bare", name: "new-project" },
     worktrees: [{ path: "/projects/new-project/main", localDirectory: "main", head: "0".repeat(40), branch: "main", isDetached: false, isCurrent: false, status: { kind: "loading" as const } }],
@@ -102,7 +103,11 @@ test("successful initialization switches the manager to the new canonical root",
     async list() { return success(inventory); }, async loadStatuses() {}, async fetch() { return success(inventory); },
     async create() { return success(inventory); }, async initialize() { return success(initialized); }, async remove() { throw new Error("unused"); },
   };
-  const herdr = { async paneContext() { return { cwd: "/projects" }; }, async workspaceName() { return undefined; }, async openWorktree() {} };
+  const herdr = {
+    async paneContext() { return { cwd: "/projects", workspaceId: "source" }; },
+    async workspaceName() { return "unrelated-source-name"; },
+    async openWorktree(_root: string, _path: string, _mode: string, _branch?: string, workspaceName?: string) { openedWorkspaceName = workspaceName; },
+  };
   const app = new ManagerApp(terminal, service as any, herdr, { cwd: "/projects" });
   app.start(); await tick(); await tick();
   terminal.key!({ key: "character", text: "n" });
@@ -111,7 +116,10 @@ test("successful initialization switches the manager to the new canonical root",
   assert.equal(app.snapshot().cwd, "/projects/new-project");
   assert.equal(app.snapshot().inventory?.root.path, "/projects/new-project");
   assert.equal(app.snapshot().message, "Repository initialized");
-  app.stop();
+  assert.equal(app.snapshot().workspaceNameOverride, "new-project");
+  terminal.key!({ key: "enter" });
+  await app.waitUntilStopped();
+  assert.equal(openedWorkspaceName, "new-project");
 });
 
 test("failed open does not exit", async () => {
