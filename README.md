@@ -12,6 +12,8 @@ repo/
 
 Git remains the source of truth. The plugin lists porcelain worktree data, checks every checkout's status, fetches, creates, and safely removes through argument-safe Git commands. Herdr is only used to host the popup and to open an existing checkout. By default a checkout opens as a standalone workspace; nested Herdr worktree grouping remains available as an optional open mode.
 
+![Herdr Better Worktrees manager menu](assets/worktree-manager.png)
+
 ## Install
 
 Requirements: Herdr 0.9+, Node.js 20+, Git, npm, and Linux or macOS.
