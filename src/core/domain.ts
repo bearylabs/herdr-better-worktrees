@@ -40,6 +40,11 @@ export type CreateWorktreeInput = {
   readonly base?: string;
 };
 
+export type CloneRepositoryInput = {
+  readonly url: string;
+  readonly destination?: string;
+};
+
 export type RemoveWorktreeInput = {
   readonly path: string;
   readonly branchCleanup: "keep" | "delete-merged";

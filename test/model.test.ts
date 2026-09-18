@@ -69,6 +69,20 @@ test("edits create fields at a grapheme-safe caret", () => {
   assert.equal(state.field, 1);
 });
 
+test("builds a canonical clone request from the clone form", () => {
+  let state = update(ready(), { type: "key", key: "character", text: "c" }).state;
+  for (const character of "git@example.test:owner/repo.git") {
+    state = update(state, { type: "key", key: "character", text: character }).state;
+  }
+  state = update(state, { type: "key", key: "tab" }).state;
+  for (const character of "../repo") state = update(state, { type: "key", key: "character", text: character }).state;
+  const submitted = update(state, { type: "key", key: "enter" });
+  assert.deepEqual(submitted.effects, [{
+    type: "clone", cwd: "/repo/main", token: 2,
+    input: { url: "git@example.test:owner/repo.git", destination: "../repo" },
+  }]);
+});
+
 test("applies a completed status scan atomically", () => {
   const state = ready();
   const updated = update(state, {

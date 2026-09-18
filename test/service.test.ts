@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -78,6 +78,43 @@ test("discovers canonical root and enforces safe removal", async (context) => {
   assert.equal(serviceRunner.discoveryCount, 2, "canonical-root discovery should be cached");
 });
 
+test("clones directly into the canonical layout", async (context) => {
+  const base = await mkdtemp(join(tmpdir(), "herdr-canonical-clone-"));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  const source = join(base, "source");
+  const targetParent = join(base, "targets");
+  const destination = join(targetParent, "source");
+  await mkdir(source);
+  await mkdir(targetParent);
+  await git(source, ["init", "-q", "-b", "main"]);
+  await git(source, ["config", "user.email", "test@example.invalid"]);
+  await git(source, ["config", "user.name", "Test"]);
+  await writeFile(join(source, "README.md"), "canonical\n");
+  await git(source, ["add", "."]);
+  await git(source, ["commit", "-qm", "initial"]);
+
+  const service = new GitWorktreeService(
+    runner,
+    join(process.cwd(), "scripts/new-worktree.sh"),
+    join(process.cwd(), "scripts/clone-canonical.sh"),
+  );
+  const cloned = await service.clone(targetParent, { url: source });
+  assert.equal(cloned.ok, true, cloned.ok ? undefined : cloned.error.message);
+  if (!cloned.ok) return;
+  assert.equal(cloned.value.root.path, await realpath(destination));
+  assert.equal(cloned.value.worktrees[0]?.localDirectory, "main");
+  assert.equal(cloned.value.worktrees[0]?.branch, "main");
+  assert.equal(await readText(join(destination, ".git")), "gitdir: ./.bare\n");
+  assert.equal((await gitOutput(destination, ["config", "--get", "remote.origin.fetch"])).trim(), "+refs/heads/*:refs/remotes/origin/*");
+  assert.equal((await gitOutput(destination, ["config", "--get", "worktree.useRelativePaths"])).trim(), "true");
+  assert.equal((await gitOutput(join(destination, "main"), ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])).trim(), "origin/main");
+
+  const nestedDestination = join(base, "missing", "parents", "nested-clone");
+  const nested = await service.clone(base, { url: source, destination: "missing/parents/nested-clone" });
+  assert.equal(nested.ok, true, nested.ok ? undefined : nested.error.message);
+  if (nested.ok) assert.equal(nested.value.root.path, await realpath(nestedDestination));
+});
+
 test("loads statuses with bounded concurrency", async () => {
   let active = 0;
   let peak = 0;
@@ -130,4 +167,14 @@ class CountingRunner implements CommandRunner {
 async function git(cwd: string, args: ReadonlyArray<string>): Promise<void> {
   const result = await runner.run("git", args, { cwd });
   assert.equal(result.code, 0, result.stderr);
+}
+
+async function gitOutput(cwd: string, args: ReadonlyArray<string>): Promise<string> {
+  const result = await runner.run("git", args, { cwd });
+  assert.equal(result.code, 0, result.stderr);
+  return result.stdout;
+}
+
+async function readText(path: string): Promise<string> {
+  return readFile(path, "utf8");
 }

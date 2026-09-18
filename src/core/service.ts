@@ -1,4 +1,5 @@
 import { realpath } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, relative, resolve, sep } from "node:path";
 import { countStatusChanges, parseGitWorktreePorcelain, type ParsedGitWorktree } from "./git-output.js";
 import type { CommandResult, CommandRunner } from "./runner.js";
@@ -11,6 +12,7 @@ import {
   UnsafeRemoval,
   WorktreeNotFound,
   type BranchCleanupOutcome,
+  type CloneRepositoryInput,
   type CreateWorktreeInput,
   type RemoveWorktreeInput,
   type Result,
@@ -23,7 +25,11 @@ import {
 export class GitWorktreeService {
   private cachedRoot: { readonly context: string; readonly root: WorktreeRoot } | undefined;
 
-  constructor(private readonly runner: CommandRunner, private readonly createScriptPath: string) {}
+  constructor(
+    private readonly runner: CommandRunner,
+    private readonly createScriptPath: string,
+    private readonly cloneScriptPath = createScriptPath.replace(/new-worktree\.sh$/, "clone-canonical.sh"),
+  ) {}
 
   async list(cwd: string, signal?: AbortSignal): Promise<Result<WorktreeInventory>> {
     const rootResult = await this.discoverRoot(cwd, signal);
@@ -61,6 +67,24 @@ export class GitWorktreeService {
     const args = [input.localDirectory, branch, ...(input.base ? [input.base] : [])];
     const created = await this.command("create", this.createScriptPath, args, cwd, signal);
     return created.ok ? this.list(cwd, signal) : created;
+  }
+
+  async clone(cwd: string, input: CloneRepositoryInput, signal?: AbortSignal): Promise<Result<WorktreeInventory>> {
+    const url = input.url.trim();
+    const destination = input.destination?.trim() || inferRepositoryName(url);
+    const invalid = !url
+      ? new InvalidInput("URL", url, "must not be empty")
+      : url.startsWith("-")
+        ? new InvalidInput("URL", url, "must not start with '-'")
+        : !destination
+          ? new InvalidInput("destination", "", "could not infer a repository name from the URL")
+          : undefined;
+    if (invalid) return failure(invalid);
+    const destinationPath = resolve(cwd, expandHome(destination));
+    const cloned = await this.command("clone", this.cloneScriptPath, [url, destinationPath], cwd, signal);
+    if (!cloned.ok) return cloned;
+    this.cachedRoot = undefined;
+    return this.list(destinationPath, signal);
   }
 
   async remove(
@@ -166,6 +190,17 @@ export class GitWorktreeService {
       return failure(new GitCommandFailed(operation, String(cause), -1, cause));
     }
   }
+}
+
+function expandHome(path: string): string {
+  return path === "~" ? homedir() : path.startsWith("~/") ? resolve(homedir(), path.slice(2)) : path;
+}
+
+function inferRepositoryName(url: string): string {
+  const withoutTrailingSlash = url.replace(/\/+$/, "");
+  const lastSegment = withoutTrailingSlash.slice(withoutTrailingSlash.lastIndexOf("/") + 1);
+  const name = lastSegment.slice(lastSegment.lastIndexOf(":") + 1).replace(/\.git$/, "");
+  return name === "." || name === ".." ? "" : name;
 }
 
 function validateCreate(input: CreateWorktreeInput): InvalidInput | undefined {

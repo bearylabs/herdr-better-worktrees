@@ -68,6 +68,30 @@ test("workspace-name lookup stays lazy and cannot delay inventory", async () => 
   app.stop();
 });
 
+test("successful clone switches the manager to the new canonical root", async () => {
+  const terminal = new FakeTerminal();
+  const cloned = {
+    root: { path: "/projects/new-repo", commonDirectory: "/projects/new-repo/.bare", name: "new-repo" },
+    worktrees: [{ path: "/projects/new-repo/main", localDirectory: "main", head: "def", branch: "main", isDetached: false, isCurrent: false, status: { kind: "loading" as const } }],
+  };
+  const service = {
+    async list() { return success(inventory); }, async loadStatuses() {}, async fetch() { return success(inventory); },
+    async create() { return success(inventory); }, async clone() { return success(cloned); }, async remove() { throw new Error("unused"); },
+  };
+  const herdr = { async paneContext() { return { cwd: "/projects" }; }, async workspaceName() { return undefined; }, async openWorktree() {} };
+  const app = new ManagerApp(terminal, service as any, herdr, { cwd: "/projects" });
+  app.start(); await tick(); await tick();
+  terminal.key!({ key: "character", text: "c" });
+  for (const character of "remote") terminal.key!({ key: "character", text: character });
+  terminal.key!({ key: "tab" });
+  for (const character of "new-repo") terminal.key!({ key: "character", text: character });
+  terminal.key!({ key: "enter" }); await tick();
+  assert.equal(app.snapshot().cwd, "/projects/new-repo");
+  assert.equal(app.snapshot().inventory?.root.path, "/projects/new-repo");
+  assert.equal(app.snapshot().message, "Repository cloned");
+  app.stop();
+});
+
 test("failed open does not exit", async () => {
   const terminal = new FakeTerminal();
   const service = {

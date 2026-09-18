@@ -1,12 +1,14 @@
-import type { CreateWorktreeInput, WorktreeInventory, WorktreeStatus } from "../core/domain.js";
+import type { CloneRepositoryInput, CreateWorktreeInput, WorktreeInventory, WorktreeStatus } from "../core/domain.js";
 import type { WorktreeOpenMode } from "../herdr-client.js";
 import { sanitize } from "./ansi.js";
 
-export type Mode = "list" | "create" | "remove";
-export type Operation = "discovering" | "idle" | "refreshing" | "fetching" | "creating" | "removing" | "opening" | "error";
+export type Mode = "list" | "create" | "clone" | "remove";
+export type Operation = "discovering" | "idle" | "refreshing" | "fetching" | "creating" | "cloning" | "removing" | "opening" | "error";
 export type KeyName = "escape" | "enter" | "tab" | "shift-tab" | "up" | "down" | "left" | "right" | "home" | "end" | "backspace" | "delete" | "ctrl-c" | "character";
 export type CreateField = "directory" | "branch" | "base";
 export type CreateForm = Record<CreateField, string>;
+export type CloneField = "url" | "destination";
+export type CloneForm = Record<CloneField, string>;
 
 export type ManagerState = {
   readonly viewport: { readonly width: number; readonly height: number };
@@ -19,6 +21,7 @@ export type ManagerState = {
   readonly sourceWorkspaceId?: string;
   readonly sourceWorkspaceName?: string;
   readonly form: CreateForm;
+  readonly cloneForm: CloneForm;
   readonly field: number;
   readonly caret: number;
   readonly removeTarget: string | undefined;
@@ -35,7 +38,7 @@ export type Event =
   | { readonly type: "resize"; readonly width: number; readonly height: number }
   | { readonly type: "context"; readonly cwd: string; readonly workspaceId?: string; readonly workspaceName?: string }
   | { readonly type: "context-failed"; readonly cwd: string }
-  | { readonly type: "inventory"; readonly token: number; readonly inventory: WorktreeInventory; readonly notice: string; readonly preferredPath?: string }
+  | { readonly type: "inventory"; readonly token: number; readonly inventory: WorktreeInventory; readonly notice: string; readonly preferredPath?: string; readonly cwd?: string }
   | { readonly type: "failure"; readonly token: number; readonly message: string }
   | { readonly type: "status"; readonly token: number; readonly path: string; readonly status: WorktreeStatus }
   | { readonly type: "statuses"; readonly token: number; readonly values: ReadonlyArray<{ readonly path: string; readonly status: WorktreeStatus }> }
@@ -49,17 +52,19 @@ export type Effect =
   | { readonly type: "load-statuses"; readonly inventory: WorktreeInventory; readonly token: number }
   | { readonly type: "fetch"; readonly cwd: string; readonly token: number }
   | { readonly type: "create"; readonly cwd: string; readonly token: number; readonly input: CreateWorktreeInput; readonly directory: string }
+  | { readonly type: "clone"; readonly cwd: string; readonly token: number; readonly input: CloneRepositoryInput }
   | { readonly type: "remove"; readonly cwd: string; readonly token: number; readonly path: string; readonly deleteBranch: boolean }
   | { readonly type: "open"; readonly token: number; readonly root: string; readonly path: string; readonly mode: WorktreeOpenMode; readonly branch?: string }
   | { readonly type: "exit" };
 
 export type Update = { readonly state: ManagerState; readonly effects: readonly Effect[] };
 const fields: readonly CreateField[] = ["directory", "branch", "base"];
+const cloneFields: readonly CloneField[] = ["url", "destination"];
 
 export function initialState(size: { width: number; height: number }, cwd = ""): ManagerState {
   return {
     viewport: normalizedSize(size.width, size.height), mode: "list", selected: 0, selectedPath: undefined, cwd,
-    openMode: "workspace", form: { directory: "", branch: "", base: "" }, field: 0, caret: 0,
+    openMode: "workspace", form: { directory: "", branch: "", base: "" }, cloneForm: { url: "", destination: "" }, field: 0, caret: 0,
     removeTarget: undefined, deleteBranch: false, operation: "discovering", message: "Discovering canonical worktree root…",
     loadToken: 0, statusToken: 0, operationToken: 0,
   };
@@ -110,9 +115,11 @@ export function update(state: ManagerState, event: Event): Update {
     const selectedPath = event.inventory.worktrees[selected]?.path;
     return result({
       ...state, inventory: event.inventory, selected, ...(selectedPath ? { selectedPath } : { selectedPath: undefined }),
+      ...(event.cwd ? { cwd: event.cwd } : {}),
       mode: "list", operation: "idle", message: event.notice, statusToken,
       form: event.notice === "Worktree created" ? { directory: "", branch: "", base: "" } : state.form,
-      field: event.notice === "Worktree created" ? 0 : state.field,
+      cloneForm: event.notice === "Repository cloned" ? { url: "", destination: "" } : state.cloneForm,
+      field: event.notice === "Worktree created" || event.notice === "Repository cloned" ? 0 : state.field,
     }, [{ type: "load-statuses", inventory: event.inventory, token: statusToken }]);
   }
   if (event.type === "failure") {
@@ -138,12 +145,14 @@ function handleKey(state: ManagerState, event: Extract<Event, { type: "key" }>):
   if (event.key === "ctrl-c" || ((event.key === "escape" || event.text === "q") && isBusy(state))) return result(state, [{ type: "exit" }]);
   if (isBusy(state)) return result(state);
   if (state.mode === "create") return createKey(state, event);
+  if (state.mode === "clone") return cloneKey(state, event);
   if (state.mode === "remove") return removeKey(state, event);
   if (event.key === "escape" || event.text === "q") return result(state, [{ type: "exit" }]);
   const items = state.inventory?.worktrees ?? [];
   if (event.key === "up" || event.text === "k") return select(state, state.selected - 1);
   if (event.key === "down" || event.text === "j") return select(state, state.selected + 1);
   if (event.text === "a") return result({ ...state, mode: "create", field: 0, caret: graphemes(state.form.directory).length, message: "Enter the new worktree details" });
+  if (event.text === "c") return result({ ...state, mode: "clone", field: 0, caret: graphemes(state.cloneForm.url).length, message: "Clone directly into the canonical layout" });
   const selectedItem = items[state.selected];
   if (event.text === "d" && selectedItem) return result({ ...state, mode: "remove", removeTarget: selectedItem.path, deleteBranch: false });
   if (event.text === "m") {
@@ -193,6 +202,27 @@ function createKey(state: ManagerState, event: Extract<Event, { type: "key" }>):
   return result(state);
 }
 
+function cloneKey(state: ManagerState, event: Extract<Event, { type: "key" }>): Update {
+  if (event.key === "escape") return result({ ...state, mode: "list", message: "Clone cancelled" });
+  if (event.key === "tab" || event.key === "shift-tab" || event.key === "up" || event.key === "down") {
+    const delta = event.key === "shift-tab" || event.key === "up" ? -1 : 1;
+    const field = Math.max(0, Math.min(1, state.field + delta));
+    return result({ ...state, field, caret: graphemes(state.cloneForm[cloneFields[field]!]).length });
+  }
+  if (event.key === "enter") {
+    return foreground(state, "cloning", "Cloning repository…", (token) => ({
+      type: "clone", cwd: state.cwd, token,
+      input: {
+        url: state.cloneForm.url.trim(),
+        ...(state.cloneForm.destination.trim() ? { destination: state.cloneForm.destination.trim() } : {}),
+      },
+    }));
+  }
+  const name = cloneFields[state.field]!;
+  const edited = editText(state.cloneForm[name], state.caret, event);
+  return edited ? result({ ...state, cloneForm: { ...state.cloneForm, [name]: edited.value }, caret: edited.caret }) : result(state);
+}
+
 function removeKey(state: ManagerState, event: Extract<Event, { type: "key" }>): Update {
   if (event.key === "escape" || event.text === "n") return result({ ...state, mode: "list", removeTarget: undefined, message: "Removal cancelled" });
   if (event.text === "b") return result({ ...state, deleteBranch: !state.deleteBranch });
@@ -214,6 +244,22 @@ function foreground(state: ManagerState, operation: Operation, message: string, 
   return result({ ...state, operation, message, operationToken: token }, [make(token)]);
 }
 function setField(state: ManagerState, name: CreateField, value: string, caret: number): Update { return result({ ...state, form: { ...state.form, [name]: value }, caret }); }
+function editText(value: string, caret: number, event: Extract<Event, { type: "key" }>): { value: string; caret: number } | undefined {
+  const parts = graphemes(value);
+  if (event.key === "left") return { value, caret: Math.max(0, caret - 1) };
+  if (event.key === "right") return { value, caret: Math.min(parts.length, caret + 1) };
+  if (event.key === "home") return { value, caret: 0 };
+  if (event.key === "end") return { value, caret: parts.length };
+  if (event.key === "backspace" && caret > 0) return { value: [...parts.slice(0, caret - 1), ...parts.slice(caret)].join(""), caret: caret - 1 };
+  if (event.key === "delete" && caret < parts.length) return { value: [...parts.slice(0, caret), ...parts.slice(caret + 1)].join(""), caret };
+  if (event.key === "character" && event.text) {
+    const text = sanitize(event.text).replace(/[\r\n]/g, "");
+    if (!text || [...text].some((char) => (char.codePointAt(0) ?? 0) < 32)) return undefined;
+    const inserted = graphemes(text);
+    return { value: [...parts.slice(0, caret), ...inserted, ...parts.slice(caret)].join(""), caret: caret + inserted.length };
+  }
+  return undefined;
+}
 function graphemes(value: string): string[] { return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)].map(({ segment }) => segment); }
 function normalizedSize(width: number, height: number) { return { width: Math.max(1, Math.floor(width || 80)), height: Math.max(1, Math.floor(height || 24)) }; }
 function result(state: ManagerState, effects: readonly Effect[] = []): Update { return { state, effects }; }

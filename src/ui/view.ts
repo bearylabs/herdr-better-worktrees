@@ -43,8 +43,10 @@ function renderContent(state: ManagerState): Frame {
   const bodyHeight = Math.max(0, height - 6);
   let cursor: { row: number; column: number } | undefined;
   if (bodyHeight > 0) {
-    if (state.mode === "create") {
-      const view = createView(state, width, bodyHeight, rows.length);
+    if (state.mode === "create" || state.mode === "clone") {
+      const view = state.mode === "create"
+        ? createView(state, width, bodyHeight, rows.length)
+        : cloneView(state, width, bodyHeight, rows.length);
       rows.push(...view.rows); cursor = view.cursor;
     } else if (state.mode === "remove" && state.removeTarget) rows.push(...removeView(state, width, bodyHeight));
     else rows.push(...listView(state, width, bodyHeight));
@@ -137,6 +139,30 @@ function createView(state: ManagerState, width: number, height: number, rowOffse
   return { rows: box("＋ CREATE WORKTREE", lines, width, height), ...(cursor ? { cursor } : {}) };
 }
 
+function cloneView(state: ManagerState, width: number, height: number, rowOffset: number): { rows: string[]; cursor?: { row: number; column: number } } {
+  const names = ["url", "destination"] as const;
+  const labels = ["Repository URL", "Destination"];
+  const hints = ["git@github.com:owner/repository.git", "default: ./repo-name; also relative, /absolute, or ~/home-relative"];
+  const lines: string[] = [""];
+  let cursor: { row: number; column: number } | undefined;
+  for (let index = 0; index < names.length; index++) {
+    const value = sanitize(state.cloneForm[names[index]!]);
+    const prefix = `${index === state.field ? "›" : " "} ${labels[index]!.padEnd(16)} │ `;
+    lines.push(`${index === state.field ? style.bold(prefix) : prefix}${value || style.dim(hints[index]!)}`);
+    if (index === state.field) {
+      const before = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)].slice(0, state.caret).map(({ segment }) => segment).join("");
+      const boxRow = lines.length;
+      const padding = boxHorizontalPadding(width);
+      if (boxContentWidth(width) > 0 && boxRow < height - 1) {
+        cursor = { row: rowOffset + boxRow, column: Math.max(1 + padding, Math.min(width - 2 - padding, 1 + padding + cellWidth(prefix) + cellWidth(before))) };
+      }
+    }
+  }
+  lines.push("", style.dim(`Creates missing destination directories, .bare, the .git pointer, remote refs, and a linked checkout.`));
+  lines.push(style.dim(`Relative destinations are resolved from: ${sanitize(state.cwd)}`));
+  return { rows: box("⇣ CLONE REPOSITORY", lines, width, height), ...(cursor ? { cursor } : {}) };
+}
+
 function removeView(state: ManagerState, width: number, height: number): string[] {
   const item = state.inventory?.worktrees.find((candidate) => candidate.path === state.removeTarget);
   if (!item) return box("− REMOVE WORKTREE", ["Selected worktree is no longer available."], width, height);
@@ -182,7 +208,8 @@ function fitAnsi(value: string, width: number): string {
 }
 function messageIcon(message: string): string { const lower = message.toLowerCase(); return lower.includes("failed") || lower.includes("error") || message.startsWith("No canonical") ? "!" : /^(ready|refreshed|fetched|worktree)/i.test(message) ? "✓" : "•"; }
 function shortcuts(mode: ManagerState["mode"]): string {
-  return mode === "list" ? "↑↓ / jk move  •  enter / o open  •  m mode  •  a add  •  d remove  •  f fetch  •  r refresh  •  esc / q close"
+  return mode === "list" ? "↑↓ / jk move  •  enter / o open  •  m mode  •  a add  •  c clone repo  •  d remove  •  f fetch  •  r refresh  •  esc / q close"
     : mode === "create" ? "tab / ↑↓ fields  •  enter create  •  esc cancel"
-      : "enter / y confirm  •  b branch cleanup  •  esc / n cancel";
+      : mode === "clone" ? "tab / ↑↓ fields  •  enter clone  •  esc cancel"
+        : "enter / y confirm  •  b branch cleanup  •  esc / n cancel";
 }

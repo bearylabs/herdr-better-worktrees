@@ -10,7 +10,7 @@ repo/
   topic/      # linked worktree
 ```
 
-Git remains the source of truth. The plugin lists porcelain worktree data, checks every checkout's status, fetches, creates, and safely removes through argument-safe Git commands. Herdr is only used to host the popup and to open an existing checkout. By default a checkout opens as a standalone workspace; nested Herdr worktree grouping remains available as an optional open mode.
+Git remains the source of truth. The plugin lists porcelain worktree data, checks every checkout's status, fetches, clones, creates, and safely removes through argument-safe Git commands. Herdr is only used to host the popup and to open an existing checkout. By default a checkout opens as a standalone workspace; nested Herdr worktree grouping remains available as an optional open mode.
 
 ![Herdr Better Worktrees manager menu](assets/worktree-manager.png)
 
@@ -47,13 +47,16 @@ description = "manage canonical worktrees"
 - `↑`/`↓` or `j`/`k`: select
 - `Enter`/`o`: open selected worktree in Herdr
 - `m`: toggle between a standalone workspace (default) and nested worktree grouping
-- `a`: create
+- `a`: create a worktree in the current canonical repository
+- `c`: clone a new repository directly into the canonical layout
 - `d`: remove (clean, unlocked, non-current worktrees only)
 - `f`: fetch/prune `origin`
 - `r`: refresh
 - `Esc`/`q`: close
 
-Creation uses `scripts/new-worktree.sh`: enter a directory name and press `Enter` immediately, or use `Tab` to fill the optional branch and base fields. An omitted branch defaults to the directory name. The script reuses a local branch, tracks a matching remote branch, or creates a branch from the supplied/default base. Branch deletion after removal uses `git branch -d`, never forced deletion.
+Worktree creation uses `scripts/new-worktree.sh`: enter a directory name and press `Enter` immediately, or use `Tab` to fill the optional branch and base fields. An omitted branch defaults to the directory name. The script reuses a local branch, tracks a matching remote branch, or creates a branch from the supplied/default base. Branch deletion after removal uses `git branch -d`, never forced deletion.
+
+Repository cloning uses `scripts/clone-canonical.sh`. Press `c`, enter the remote URL and, if needed, a destination, then press `Enter`. The destination accepts paths relative to the focused pane, absolute paths such as `/srv/projects/repo`, and home-relative paths such as `~/projects/repo`. An omitted destination defaults to the repository name from the URL. The destination and any missing parent directories are created automatically; the final destination must not already exist. The helper clones directly into `.bare`, writes the `.git` pointer, configures remote refs, reflogs, and relative worktree paths, and checks out the remote's default branch as the first linked worktree. A failed setup removes the new incomplete destination. You can invoke the manager outside a Git repository and press `c` after root discovery reports that no canonical root was found.
 
 ## Herdr workspace modes
 

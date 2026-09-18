@@ -12,7 +12,11 @@ export async function main(): Promise<number> {
   const terminal = new TerminalSession(process.stdin, process.stdout, process as unknown as ProcessHooks);
   const app = new ManagerApp(
     terminal,
-    new GitWorktreeService(runner, join(pluginRoot, "scripts", "new-worktree.sh")),
+    new GitWorktreeService(
+      runner,
+      join(pluginRoot, "scripts", "new-worktree.sh"),
+      join(pluginRoot, "scripts", "clone-canonical.sh"),
+    ),
     new HerdrClient(runner),
     {
       cwd: process.cwd(),
