@@ -4,6 +4,29 @@ import { isBusy, selectedWorktree, type ManagerState } from "./model.js";
 
 export function render(state: ManagerState): Frame {
   const { width, height } = state.viewport;
+  const horizontalInset = width > 2 ? 1 : 0;
+  const content = renderContent({
+    ...state,
+    viewport: { width: width - horizontalInset * 2, height },
+  });
+  const rows = content.rows.map((row) =>
+    `${" ".repeat(horizontalInset)}${row}${" ".repeat(horizontalInset)}`
+  );
+  return {
+    width,
+    height,
+    rows,
+    ...(content.cursor ? {
+      cursor: {
+        row: content.cursor.row,
+        column: content.cursor.column + horizontalInset,
+      },
+    } : {}),
+  };
+}
+
+function renderContent(state: ManagerState): Frame {
+  const { width, height } = state.viewport;
   const rows: string[] = [];
   const busy = isBusy(state);
   if (height <= 2) {
@@ -13,9 +36,9 @@ export function render(state: ManagerState): Frame {
   }
   const root = state.inventory ? `  /  ${sanitize(state.inventory.root.name)}` : "";
   const linked = busy ? "◌ Working…" : `● ${state.inventory?.worktrees.length ?? 0} linked`;
-  rows.push(borderLine("╭", "─", "╮", width));
+  rows.push(borderLine("┌", "─", "┐", width));
   rows.push(sideBySide(`${style.bold("◆ Better Worktrees")}${style.dim(root)}`, style.bold(linked), width));
-  rows.push(borderLine("╰", "─", "╯", width));
+  rows.push(borderLine("└", "─", "┘", width));
 
   const bodyHeight = Math.max(0, height - 6);
   let cursor: { row: number; column: number } | undefined;
@@ -52,7 +75,7 @@ function listPanel(state: ManagerState, width: number, height: number, compact: 
   const visible = inventory.worktrees.slice(start, start + capacity);
   const mode = state.openMode === "workspace" ? "workspace" : "nested";
   const heading = compact ? `WORKTREES  ${mode}  •  ${state.selected + 1} / ${inventory.worktrees.length}` : `WORKTREES  ${state.selected + 1} / ${inventory.worktrees.length}`;
-  const inner = Math.max(0, width - 2);
+  const inner = boxContentWidth(width);
   const lines = visible.map((item, offset) => worktreeRow(item, start + offset === state.selected, inner));
   if (inventory.worktrees.length > capacity && lines.length) {
     const indicators = `${start > 0 ? "↑ more" : ""}${start > 0 && start + visible.length < inventory.worktrees.length ? "  " : ""}${start + visible.length < inventory.worktrees.length ? "↓ more" : ""}`;
@@ -68,7 +91,7 @@ function worktreeRow(item: WorktreeRecord, selected: boolean, width: number): st
   const right = truncate(status, Math.min(cellWidth(status), width));
   const leftWidth = Math.max(0, width - cellWidth(right) - 1);
   const plain = `${pad(truncate(left, leftWidth), leftWidth)}${width > cellWidth(right) ? " " : ""}${right}`;
-  return selected ? style.inverseBold(pad(plain, width)) : pad(plain, width);
+  return selected ? style.selection(pad(plain, width)) : pad(plain, width);
 }
 
 function detailsPanel(item: WorktreeRecord, mode: string, width: number, height: number): string[] {
@@ -101,8 +124,12 @@ function createView(state: ManagerState, width: number, height: number, rowOffse
       const before = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value)].slice(0, state.caret).map(({ segment }) => segment).join("");
       const boxRow = lines.length;
       // Do not expose a cursor on a clipped field (or on the bottom border).
-      if (width >= 3 && boxRow < height - 1) {
-        cursor = { row: rowOffset + boxRow, column: Math.max(1, Math.min(width - 2, 1 + cellWidth(prefix) + cellWidth(before))) };
+      const padding = boxHorizontalPadding(width);
+      if (boxContentWidth(width) > 0 && boxRow < height - 1) {
+        cursor = {
+          row: rowOffset + boxRow,
+          column: Math.max(1 + padding, Math.min(width - 2 - padding, 1 + padding + cellWidth(prefix) + cellWidth(before))),
+        };
       }
     }
   }
@@ -124,11 +151,16 @@ function box(title: string, lines: readonly string[], width: number, height: num
   if (height <= 0) return [];
   if (width <= 1) return Array.from({ length: height }, () => " ".repeat(width));
   const topText = truncate(` ${title} `, Math.max(0, width - 2));
-  const output = [`╭${topText}${"─".repeat(Math.max(0, width - 2 - cellWidth(topText)))}╮`];
-  for (let index = 0; index < height - 2; index++) output.push(`│${fitAnsi(lines[index] ?? "", width - 2)}│`);
-  if (height > 1) output.push(`╰${"─".repeat(Math.max(0, width - 2))}╯`);
+  const padding = " ".repeat(boxHorizontalPadding(width));
+  const contentWidth = boxContentWidth(width);
+  const output = [`┌${topText}${"─".repeat(Math.max(0, width - 2 - cellWidth(topText)))}┐`];
+  for (let index = 0; index < height - 2; index++) output.push(`│${padding}${fitAnsi(lines[index] ?? "", contentWidth)}${padding}│`);
+  if (height > 1) output.push(`└${"─".repeat(Math.max(0, width - 2))}┘`);
   return output.slice(0, height);
 }
+
+function boxHorizontalPadding(width: number): number { return width >= 4 ? 1 : 0; }
+function boxContentWidth(width: number): number { return Math.max(0, width - 2 - boxHorizontalPadding(width) * 2); }
 
 function statusText(item: WorktreeRecord): string {
   if (item.status.kind === "loading") return "◌ checking";
@@ -150,7 +182,7 @@ function fitAnsi(value: string, width: number): string {
 }
 function messageIcon(message: string): string { const lower = message.toLowerCase(); return lower.includes("failed") || lower.includes("error") || message.startsWith("No canonical") ? "!" : /^(ready|refreshed|fetched|worktree)/i.test(message) ? "✓" : "•"; }
 function shortcuts(mode: ManagerState["mode"]): string {
-  return mode === "list" ? "↑↓ / jk move  enter / o open  m mode  a add  d remove  f fetch  r refresh  esc / q close"
-    : mode === "create" ? "tab / ↑↓ fields  enter create  esc cancel"
-      : "enter / y confirm  b branch cleanup  esc / n cancel";
+  return mode === "list" ? "↑↓ / jk move  •  enter / o open  •  m mode  •  a add  •  d remove  •  f fetch  •  r refresh  •  esc / q close"
+    : mode === "create" ? "tab / ↑↓ fields  •  enter create  •  esc cancel"
+      : "enter / y confirm  •  b branch cleanup  •  esc / n cancel";
 }

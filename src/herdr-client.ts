@@ -81,7 +81,7 @@ export class HerdrClient {
     ].filter((value): value is string => value !== undefined);
     await this.run([
       "plugin", "pane", "open", "--plugin", pluginId, "--entrypoint", "manager",
-      "--placement", "popup", "--width", "90%", "--height", "82%", "--cwd", cwd,
+      "--placement", "popup", "--width", "150", "--height", "82%", "--cwd", cwd,
       ...sourceEnvironment.flatMap((value) => ["--env", value]),
       "--focus",
     ]);

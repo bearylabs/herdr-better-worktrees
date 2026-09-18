@@ -6,6 +6,11 @@ test("sanitizes untrusted terminal controls", () => {
   assert.equal(sanitize("safe\u001b[31m red\nnext\u0007"), "safe red next");
 });
 
+test("uses the terminal palette for selection styling", () => {
+  assert.equal(style.selection("row"), "\u001b[48;5;8mrow\u001b[49m");
+  assert.doesNotMatch(style.selection("row"), /\u001b\[(?:1;)?7m/);
+});
+
 test("measures graphemes without dependencies", () => {
   assert.equal(cellWidth("ascii"), 5);
   assert.equal(cellWidth("e\u0301"), 1);
@@ -29,6 +34,8 @@ test("encodes a non-scrolling synchronized complete frame without a blanking tra
   const output = encodeFrame(undefined, { width: 3, height: 2, rows: ["abc", "def"] });
   assert.match(output, /\u001b\[\?2026h\u001b\[H/);
   assert.doesNotMatch(output, /\?1049h|\[2J/);
+  assert.match(output, /\u001b\[2Kabc\u001b\[2;1H\u001b\[2Kdef/);
+  assert.doesNotMatch(output, /abc\u001b\[K|def\u001b\[K/);
   assert.equal(output.endsWith("\u001b[?2026l"), true);
   assert.equal(stripAnsi(output).endsWith("\n"), false);
 });

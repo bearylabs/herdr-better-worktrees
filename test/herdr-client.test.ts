@@ -70,7 +70,7 @@ test("passes source context into the manager without looking it up before openin
     command: "/bin/herdr",
     args: [
       "plugin", "pane", "open", "--plugin", "herdr-better-worktrees", "--entrypoint", "manager",
-      "--placement", "popup", "--width", "90%", "--height", "82%", "--cwd", "/repo/src",
+      "--placement", "popup", "--width", "150", "--height", "82%", "--cwd", "/repo/src",
       "--env", "BETTER_WORKTREES_SOURCE_PANE_ID=pane",
       "--env", "BETTER_WORKTREES_SOURCE_WORKSPACE_ID=source",
       "--focus",

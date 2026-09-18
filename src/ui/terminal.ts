@@ -1,4 +1,5 @@
 import { emitKeypressEvents } from "node:readline";
+import type { Interface } from "node:readline";
 import type { ReadStream, WriteStream } from "node:tty";
 import { ESC, encodeFrame, type Frame } from "./ansi.js";
 import type { KeyName } from "./model.js";
@@ -6,6 +7,11 @@ import type { KeyName } from "./model.js";
 export type NormalizedKey = { readonly key: KeyName; readonly text?: string };
 type SignalName = "SIGINT" | "SIGTERM" | "SIGHUP" | "SIGQUIT" | "SIGTSTP" | "SIGCONT";
 type Listener = (...args: any[]) => void;
+
+// Readline waits 500 ms by default before deciding a lone ESC is not the
+// beginning of an arrow/function-key sequence. Keep enough time for a split
+// terminal sequence while making popup dismissal feel immediate.
+const ESCAPE_CODE_TIMEOUT_MS = 25;
 
 export interface ProcessHooks {
   readonly pid: number;
@@ -53,7 +59,7 @@ export class TerminalSession implements Terminal {
     this.onKeyCallback = onKey; this.onResizeCallback = onResize; this.onStopCallback = onStop;
     this.wasRaw = Boolean(this.input.isRaw);
     this.wasPaused = this.input.isPaused();
-    emitKeypressEvents(this.input);
+    emitKeypressEvents(this.input, { escapeCodeTimeout: ESCAPE_CODE_TIMEOUT_MS } as unknown as Interface);
     this.listen(this.input, "keypress", this.handleKeypress);
     this.listen(this.output, "resize", this.handleResize);
     this.listen(this.output, "drain", this.handleDrain);

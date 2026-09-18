@@ -21,6 +21,6 @@ command = ["node", "dist/open-popup.js"]
 id = "manager"
 title = "Worktree manager"
 placement = "popup"
-width = "90%"
+width = 150
 height = "82%"
 command = ["node", "--input-type=module", "--eval", "await import(process.env.HERDR_PLUGIN_ROOT + '/dist/manager.js')"]

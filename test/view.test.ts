@@ -26,10 +26,45 @@ for (const [width, height] of [[100, 24], [87, 18], [20, 5], [1, 1]] as const) {
   });
 }
 
-test("uses master-detail only at the 88-column breakpoint", () => {
-  assert.match(stripAnsi(render(state(88, 20)).rows.join("\n")), /DETAILS/);
-  assert.doesNotMatch(stripAnsi(render(state(87, 20)).rows.join("\n")), /DETAILS/);
-  assert.match(stripAnsi(render(state(87, 20)).rows.join("\n")), /workspace/);
+test("leaves one cell of breathing room beside the popup content", () => {
+  const frame = render(state(100, 24));
+  for (const row of frame.rows) {
+    const plain = stripAnsi(row);
+    assert.equal(plain.startsWith(" "), true);
+    assert.equal(plain.endsWith(" "), true);
+  }
+});
+
+test("uses square corners throughout the popup", () => {
+  const popup = stripAnsi(render(state(100, 24)).rows.join("\n"));
+  assert.doesNotMatch(popup, /[╭╮╰╯]/);
+  assert.match(popup, /┌─+┐/);
+  assert.match(popup, /└─+┘/);
+});
+
+test("separates keybinding hints with bullets", () => {
+  const list = stripAnsi(render(state(120, 15)).rows.at(-1) ?? "");
+  const create = stripAnsi(render({ ...state(120, 15), mode: "create" }).rows.at(-1) ?? "");
+  const remove = stripAnsi(render({ ...state(120, 15), mode: "remove", removeTarget: "/repo/topic-7" }).rows.at(-1) ?? "");
+  assert.match(list, /move  •  enter/);
+  assert.match(create, /fields  •  enter/);
+  assert.match(remove, /confirm  •  b branch/);
+});
+
+test("uses master-detail when the inset content reaches 88 columns", () => {
+  assert.match(stripAnsi(render(state(90, 20)).rows.join("\n")), /DETAILS/);
+  assert.doesNotMatch(stripAnsi(render(state(89, 20)).rows.join("\n")), /DETAILS/);
+  assert.match(stripAnsi(render(state(89, 20)).rows.join("\n")), /workspace/);
+});
+
+test("pads content inside worktree and details boxes", () => {
+  const compactRows = render(state(87, 18)).rows.map(stripAnsi);
+  const worktreeRow = compactRows.find((row) => row.includes("branch-7"));
+  assert.match(worktreeRow ?? "", /^ │ .* │ $/);
+
+  const detailedRows = render(state(100, 24)).rows.map(stripAnsi);
+  const detailRow = detailedRows.find((row) => row.includes("Branch") && row.includes("branch-7"));
+  assert.match(detailRow ?? "", /│ Branch\s+branch-7.* │ $/);
 });
 
 test("centers the selected item in a scrolling window", () => {

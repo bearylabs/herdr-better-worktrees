@@ -69,10 +69,25 @@ test("edits create fields at a grapheme-safe caret", () => {
   assert.equal(state.field, 1);
 });
 
+test("applies a completed status scan atomically", () => {
+  const state = ready();
+  const updated = update(state, {
+    type: "statuses",
+    token: state.statusToken,
+    values: [
+      { path: "/repo/main", status: { kind: "clean" } },
+      { path: "/repo/topic", status: { kind: "dirty", changedFileCount: 2 } },
+    ],
+  }).state;
+  assert.deepEqual(updated.inventory?.worktrees.map((item) => item.status.kind), ["clean", "dirty"]);
+});
+
 test("ignores stale status and operation completions", () => {
   const state = ready();
   const staleStatus = update(state, { type: "status", token: 0, path: "/repo/main", status: { kind: "clean" } }).state;
   assert.equal(staleStatus.inventory?.worktrees[0]?.status.kind, "loading");
+  const staleStatuses = update(state, { type: "statuses", token: 0, values: [{ path: "/repo/main", status: { kind: "clean" } }] }).state;
+  assert.equal(staleStatuses.inventory?.worktrees[0]?.status.kind, "loading");
   const staleFailure = update(state, { type: "failure", token: 999, message: "bad" }).state;
   assert.equal(staleFailure.message, "Ready");
 });

@@ -1,3 +1,4 @@
+import type { WorktreeStatus } from "../core/domain.js";
 import type { GitWorktreeService } from "../core/service.js";
 import type { HerdrClient } from "../herdr-client.js";
 import { initialState, update, type Effect, type Event, type ManagerState } from "./model.js";
@@ -72,9 +73,14 @@ export class ManagerApp {
     if (effect.type === "load-statuses") {
       this.statusController?.abort();
       const controller = new AbortController(); this.statusController = controller;
+      const statuses: Array<{ path: string; status: WorktreeStatus }> = [];
       void this.service.loadStatuses(effect.inventory, (path, status) => {
-        if (!controller.signal.aborted) this.dispatch({ type: "status", token: effect.token, path, status });
-      }, controller.signal).catch(() => {
+        statuses.push({ path, status });
+      }, controller.signal).then(() => {
+        // Apply the completed status scan as one frame. Incremental updates made
+        // the popup look as if its contents were still being assembled.
+        if (!controller.signal.aborted) this.dispatch({ type: "statuses", token: effect.token, values: statuses });
+      }).catch(() => {
         // Individual status failures are represented as `unavailable` by the
         // service. A run-level failure must not replace a foreground message.
       }).finally(() => { if (this.statusController === controller) this.statusController = undefined; });

@@ -1,9 +1,20 @@
 export const ESC = "\u001b[";
 
+// Keep colors in the terminal's configurable ANSI palette. Slot 8 is the
+// theme-provided muted/bright-black color; unlike reverse video it does not
+// turn the terminal's foreground into a glaring, theme-external background.
+const terminalPalette = {
+  selectionBackground: 8,
+} as const;
+
+function background(value: string, paletteIndex: number): string {
+  return `${ESC}48;5;${paletteIndex}m${value}${ESC}49m`;
+}
+
 export const style = {
   bold: (value: string): string => `${ESC}1m${value}${ESC}22m`,
   dim: (value: string): string => `${ESC}2m${value}${ESC}22m`,
-  inverseBold: (value: string): string => `${ESC}1;7m${value}${ESC}27;22m`,
+  selection: (value: string): string => background(value, terminalPalette.selectionBackground),
 };
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -106,7 +117,13 @@ export function encodeFrame(_previous: Frame | undefined, next: Frame): string {
   // transition only creates a visible blank frame on terminals that do not
   // implement synchronized output. Every frame already overwrites every row.
   const prefix = `${ESC}?2026h${ESC}H`;
-  const body = next.rows.slice(0, next.height).map((row) => `${row}${ESC}K`).join("\n");
+  // Clear before drawing, not after. Once a row fills the viewport the cursor
+  // remains on its final cell with autowrap pending; EL (`CSI K`) would then
+  // erase that cell, making the popup's right edge appear clipped. Addressing
+  // each row directly also avoids relying on newline behavior at the margin.
+  const body = next.rows.slice(0, next.height).map((row, index) =>
+    `${index === 0 ? "" : `${ESC}${index + 1};1H`}${ESC}2K${row}`
+  ).join("");
   const cursor = next.cursor
     ? `${ESC}${Math.max(1, next.cursor.row + 1)};${Math.max(1, next.cursor.column + 1)}H${ESC}?25h`
     : `${ESC}?25l`;

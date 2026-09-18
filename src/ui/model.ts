@@ -38,6 +38,7 @@ export type Event =
   | { readonly type: "inventory"; readonly token: number; readonly inventory: WorktreeInventory; readonly notice: string; readonly preferredPath?: string }
   | { readonly type: "failure"; readonly token: number; readonly message: string }
   | { readonly type: "status"; readonly token: number; readonly path: string; readonly status: WorktreeStatus }
+  | { readonly type: "statuses"; readonly token: number; readonly values: ReadonlyArray<{ readonly path: string; readonly status: WorktreeStatus }> }
   | { readonly type: "removed"; readonly token: number; readonly notice: string }
   | { readonly type: "opened"; readonly token: number }
   | { readonly type: "workspace-name"; readonly token: number; readonly name?: string };
@@ -74,9 +75,21 @@ export function isBusy(state: ManagerState): boolean {
 
 export function update(state: ManagerState, event: Event): Update {
   if (event.type === "resize") return result({ ...state, viewport: normalizedSize(event.width, event.height) });
-  if (event.type === "status") {
+  if (event.type === "status" || event.type === "statuses") {
     if (event.token !== state.statusToken || !state.inventory) return result(state);
-    return result({ ...state, inventory: { ...state.inventory, worktrees: state.inventory.worktrees.map((item) => item.path === event.path ? { ...item, status: event.status } : item) } });
+    const statuses = event.type === "status"
+      ? new Map([[event.path, event.status]])
+      : new Map(event.values.map(({ path, status }) => [path, status]));
+    return result({
+      ...state,
+      inventory: {
+        ...state.inventory,
+        worktrees: state.inventory.worktrees.map((item) => {
+          const status = statuses.get(item.path);
+          return status ? { ...item, status } : item;
+        }),
+      },
+    });
   }
   if (event.type === "context" || event.type === "context-failed") {
     if (state.operation !== "discovering") return result(state);

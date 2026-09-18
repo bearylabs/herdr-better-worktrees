@@ -26,6 +26,19 @@ test("normalizes readline keys and rejects control sequences", () => {
   assert.equal(normalizeKey(undefined, { sequence: "\u001b[200~" }), undefined);
 });
 
+test("recognizes a standalone Escape without readline's half-second delay", async () => {
+  const input = new FakeInput(); const output = new FakeOutput(); const hooks = new FakeProcess();
+  const terminal = new TerminalSession(input as any, output as any, hooks);
+  const escape = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Escape was not recognized promptly")), 100);
+    terminal.start((key) => {
+      if (key.key === "escape") { clearTimeout(timeout); resolve(); }
+    }, () => {}, () => {});
+  });
+  input.emit("data", Buffer.from("\u001b"));
+  try { await escape; } finally { terminal.stop(); }
+});
+
 test("paints directly into the popup viewport and restores terminal state once", () => {
   const input = new FakeInput(); const output = new FakeOutput(); const hooks = new FakeProcess();
   const terminal = new TerminalSession(input as any, output as any, hooks);

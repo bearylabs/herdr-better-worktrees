@@ -4,13 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --noEmit && rm -rf dist && esbuild src/open-popup.ts src/manager.ts --bundle --platform=node --format=esm --target=node18 --outdir=dist",
     "check": "npm run typecheck && npm test",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
+    "esbuild": "^0.28.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }
