@@ -16,6 +16,7 @@ export async function main(): Promise<number> {
       runner,
       join(pluginRoot, "scripts", "new-worktree.sh"),
       join(pluginRoot, "scripts", "clone-canonical.sh"),
+      join(pluginRoot, "scripts", "init-canonical.sh"),
     ),
     new HerdrClient(runner),
     {

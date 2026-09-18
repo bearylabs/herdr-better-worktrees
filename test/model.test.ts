@@ -83,6 +83,18 @@ test("builds a canonical clone request from the clone form", () => {
   }]);
 });
 
+test("builds a new canonical repository request with an optional branch", () => {
+  let state = update(ready(), { type: "key", key: "character", text: "n" }).state;
+  for (const character of "../new-project") state = update(state, { type: "key", key: "character", text: character }).state;
+  state = update(state, { type: "key", key: "tab" }).state;
+  for (const character of "trunk") state = update(state, { type: "key", key: "character", text: character }).state;
+  const submitted = update(state, { type: "key", key: "enter" });
+  assert.deepEqual(submitted.effects, [{
+    type: "initialize", cwd: "/repo/main", token: 2,
+    input: { destination: "../new-project", initialBranch: "trunk" },
+  }]);
+});
+
 test("applies a completed status scan atomically", () => {
   const state = ready();
   const updated = update(state, {

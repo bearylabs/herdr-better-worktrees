@@ -22,7 +22,7 @@ export class ManagerApp {
 
   constructor(
     private readonly terminal: Terminal,
-    private readonly service: Pick<GitWorktreeService, "list" | "loadStatuses" | "fetch" | "create" | "clone" | "remove">,
+    private readonly service: Pick<GitWorktreeService, "list" | "loadStatuses" | "fetch" | "create" | "clone" | "initialize" | "remove">,
     private readonly herdr: Pick<HerdrClient, "paneContext" | "workspaceName" | "openWorktree">,
     private readonly options: AppOptions,
   ) {
@@ -143,6 +143,17 @@ export class ManagerApp {
         this.dispatch({
           type: "inventory", token: effect.token, inventory: result.value,
           notice: "Repository cloned", cwd: result.value.root.path,
+        });
+      } else this.dispatch({ type: "failure", token: effect.token, message: result.error.message });
+      return;
+    }
+    if (effect.type === "initialize") {
+      const result = await this.service.initialize(effect.cwd, effect.input, signal);
+      if (signal.aborted) return;
+      if (result.ok) {
+        this.dispatch({
+          type: "inventory", token: effect.token, inventory: result.value,
+          notice: "Repository initialized", cwd: result.value.root.path,
         });
       } else this.dispatch({ type: "failure", token: effect.token, message: result.error.message });
       return;

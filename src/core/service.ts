@@ -14,6 +14,7 @@ import {
   type BranchCleanupOutcome,
   type CloneRepositoryInput,
   type CreateWorktreeInput,
+  type InitializeRepositoryInput,
   type RemoveWorktreeInput,
   type Result,
   type WorktreeInventory,
@@ -29,6 +30,7 @@ export class GitWorktreeService {
     private readonly runner: CommandRunner,
     private readonly createScriptPath: string,
     private readonly cloneScriptPath = createScriptPath.replace(/new-worktree\.sh$/, "clone-canonical.sh"),
+    private readonly initScriptPath = createScriptPath.replace(/new-worktree\.sh$/, "init-canonical.sh"),
   ) {}
 
   async list(cwd: string, signal?: AbortSignal): Promise<Result<WorktreeInventory>> {
@@ -83,6 +85,22 @@ export class GitWorktreeService {
     const destinationPath = resolve(cwd, expandHome(destination));
     const cloned = await this.command("clone", this.cloneScriptPath, [url, destinationPath], cwd, signal);
     if (!cloned.ok) return cloned;
+    this.cachedRoot = undefined;
+    return this.list(destinationPath, signal);
+  }
+
+  async initialize(cwd: string, input: InitializeRepositoryInput, signal?: AbortSignal): Promise<Result<WorktreeInventory>> {
+    const destination = input.destination.trim();
+    const initialBranch = input.initialBranch?.trim() || "main";
+    const invalid = !destination || destination === "." || destination === ".."
+      ? new InvalidInput("destination", destination, "must name a new repository directory")
+      : initialBranch.startsWith("-")
+        ? new InvalidInput("initial branch", initialBranch, "must not start with '-'")
+        : undefined;
+    if (invalid) return failure(invalid);
+    const destinationPath = resolve(cwd, expandHome(destination));
+    const initialized = await this.command("initialize", this.initScriptPath, [destinationPath, initialBranch], cwd, signal);
+    if (!initialized.ok) return initialized;
     this.cachedRoot = undefined;
     return this.list(destinationPath, signal);
   }

@@ -45,9 +45,11 @@ test("uses square corners throughout the popup", () => {
 test("separates keybinding hints with bullets", () => {
   const list = stripAnsi(render(state(120, 15)).rows.at(-1) ?? "");
   const create = stripAnsi(render({ ...state(120, 15), mode: "create" }).rows.at(-1) ?? "");
+  const initialize = stripAnsi(render({ ...state(120, 15), mode: "initialize" }).rows.at(-1) ?? "");
   const remove = stripAnsi(render({ ...state(120, 15), mode: "remove", removeTarget: "/repo/topic-7" }).rows.at(-1) ?? "");
-  assert.match(list, /move  •  enter/);
+  assert.match(list, /n new repo/);
   assert.match(create, /fields  •  enter/);
+  assert.match(initialize, /enter initialize/);
   assert.match(remove, /confirm  •  b branch/);
 });
 
@@ -88,6 +90,9 @@ test("renders loading, create and remove modes with cursor policy", () => {
   const create = render({ ...state(80, 15), mode: "create", form: { directory: "topic", branch: "", base: "" }, caret: 5 });
   assert.match(stripAnsi(create.rows.join("\n")), /CREATE WORKTREE/);
   assert.ok(create.cursor);
+  const initialize = render({ ...state(80, 15), mode: "initialize", initializeForm: { destination: "new-project", initialBranch: "" }, caret: 11 });
+  assert.match(stripAnsi(initialize.rows.join("\n")), /NEW REPOSITORY/);
+  assert.ok(initialize.cursor);
   const remove = render({ ...state(80, 15), mode: "remove", removeTarget: "/repo/topic-7", deleteBranch: true });
   assert.match(stripAnsi(remove.rows.join("\n")), /delete merged local branch/);
   assert.equal(remove.cursor, undefined);

@@ -1,14 +1,16 @@
-import type { CloneRepositoryInput, CreateWorktreeInput, WorktreeInventory, WorktreeStatus } from "../core/domain.js";
+import type { CloneRepositoryInput, CreateWorktreeInput, InitializeRepositoryInput, WorktreeInventory, WorktreeStatus } from "../core/domain.js";
 import type { WorktreeOpenMode } from "../herdr-client.js";
 import { sanitize } from "./ansi.js";
 
-export type Mode = "list" | "create" | "clone" | "remove";
-export type Operation = "discovering" | "idle" | "refreshing" | "fetching" | "creating" | "cloning" | "removing" | "opening" | "error";
+export type Mode = "list" | "create" | "clone" | "initialize" | "remove";
+export type Operation = "discovering" | "idle" | "refreshing" | "fetching" | "creating" | "cloning" | "initializing" | "removing" | "opening" | "error";
 export type KeyName = "escape" | "enter" | "tab" | "shift-tab" | "up" | "down" | "left" | "right" | "home" | "end" | "backspace" | "delete" | "ctrl-c" | "character";
 export type CreateField = "directory" | "branch" | "base";
 export type CreateForm = Record<CreateField, string>;
 export type CloneField = "url" | "destination";
 export type CloneForm = Record<CloneField, string>;
+export type InitializeField = "destination" | "initialBranch";
+export type InitializeForm = Record<InitializeField, string>;
 
 export type ManagerState = {
   readonly viewport: { readonly width: number; readonly height: number };
@@ -22,6 +24,7 @@ export type ManagerState = {
   readonly sourceWorkspaceName?: string;
   readonly form: CreateForm;
   readonly cloneForm: CloneForm;
+  readonly initializeForm: InitializeForm;
   readonly field: number;
   readonly caret: number;
   readonly removeTarget: string | undefined;
@@ -53,6 +56,7 @@ export type Effect =
   | { readonly type: "fetch"; readonly cwd: string; readonly token: number }
   | { readonly type: "create"; readonly cwd: string; readonly token: number; readonly input: CreateWorktreeInput; readonly directory: string }
   | { readonly type: "clone"; readonly cwd: string; readonly token: number; readonly input: CloneRepositoryInput }
+  | { readonly type: "initialize"; readonly cwd: string; readonly token: number; readonly input: InitializeRepositoryInput }
   | { readonly type: "remove"; readonly cwd: string; readonly token: number; readonly path: string; readonly deleteBranch: boolean }
   | { readonly type: "open"; readonly token: number; readonly root: string; readonly path: string; readonly mode: WorktreeOpenMode; readonly branch?: string }
   | { readonly type: "exit" };
@@ -60,11 +64,13 @@ export type Effect =
 export type Update = { readonly state: ManagerState; readonly effects: readonly Effect[] };
 const fields: readonly CreateField[] = ["directory", "branch", "base"];
 const cloneFields: readonly CloneField[] = ["url", "destination"];
+const initializeFields: readonly InitializeField[] = ["destination", "initialBranch"];
 
 export function initialState(size: { width: number; height: number }, cwd = ""): ManagerState {
   return {
     viewport: normalizedSize(size.width, size.height), mode: "list", selected: 0, selectedPath: undefined, cwd,
-    openMode: "workspace", form: { directory: "", branch: "", base: "" }, cloneForm: { url: "", destination: "" }, field: 0, caret: 0,
+    openMode: "workspace", form: { directory: "", branch: "", base: "" }, cloneForm: { url: "", destination: "" },
+    initializeForm: { destination: "", initialBranch: "" }, field: 0, caret: 0,
     removeTarget: undefined, deleteBranch: false, operation: "discovering", message: "Discovering canonical worktree root…",
     loadToken: 0, statusToken: 0, operationToken: 0,
   };
@@ -119,7 +125,8 @@ export function update(state: ManagerState, event: Event): Update {
       mode: "list", operation: "idle", message: event.notice, statusToken,
       form: event.notice === "Worktree created" ? { directory: "", branch: "", base: "" } : state.form,
       cloneForm: event.notice === "Repository cloned" ? { url: "", destination: "" } : state.cloneForm,
-      field: event.notice === "Worktree created" || event.notice === "Repository cloned" ? 0 : state.field,
+      initializeForm: event.notice === "Repository initialized" ? { destination: "", initialBranch: "" } : state.initializeForm,
+      field: ["Worktree created", "Repository cloned", "Repository initialized"].includes(event.notice) ? 0 : state.field,
     }, [{ type: "load-statuses", inventory: event.inventory, token: statusToken }]);
   }
   if (event.type === "failure") {
@@ -146,6 +153,7 @@ function handleKey(state: ManagerState, event: Extract<Event, { type: "key" }>):
   if (isBusy(state)) return result(state);
   if (state.mode === "create") return createKey(state, event);
   if (state.mode === "clone") return cloneKey(state, event);
+  if (state.mode === "initialize") return initializeKey(state, event);
   if (state.mode === "remove") return removeKey(state, event);
   if (event.key === "escape" || event.text === "q") return result(state, [{ type: "exit" }]);
   const items = state.inventory?.worktrees ?? [];
@@ -153,6 +161,7 @@ function handleKey(state: ManagerState, event: Extract<Event, { type: "key" }>):
   if (event.key === "down" || event.text === "j") return select(state, state.selected + 1);
   if (event.text === "a") return result({ ...state, mode: "create", field: 0, caret: graphemes(state.form.directory).length, message: "Enter the new worktree details" });
   if (event.text === "c") return result({ ...state, mode: "clone", field: 0, caret: graphemes(state.cloneForm.url).length, message: "Clone directly into the canonical layout" });
+  if (event.text === "n") return result({ ...state, mode: "initialize", field: 0, caret: graphemes(state.initializeForm.destination).length, message: "Initialize a new empty canonical repository" });
   const selectedItem = items[state.selected];
   if (event.text === "d" && selectedItem) return result({ ...state, mode: "remove", removeTarget: selectedItem.path, deleteBranch: false });
   if (event.text === "m") {
@@ -221,6 +230,27 @@ function cloneKey(state: ManagerState, event: Extract<Event, { type: "key" }>): 
   const name = cloneFields[state.field]!;
   const edited = editText(state.cloneForm[name], state.caret, event);
   return edited ? result({ ...state, cloneForm: { ...state.cloneForm, [name]: edited.value }, caret: edited.caret }) : result(state);
+}
+
+function initializeKey(state: ManagerState, event: Extract<Event, { type: "key" }>): Update {
+  if (event.key === "escape") return result({ ...state, mode: "list", message: "Initialization cancelled" });
+  if (event.key === "tab" || event.key === "shift-tab" || event.key === "up" || event.key === "down") {
+    const delta = event.key === "shift-tab" || event.key === "up" ? -1 : 1;
+    const field = Math.max(0, Math.min(1, state.field + delta));
+    return result({ ...state, field, caret: graphemes(state.initializeForm[initializeFields[field]!]).length });
+  }
+  if (event.key === "enter") {
+    return foreground(state, "initializing", "Initializing repository…", (token) => ({
+      type: "initialize", cwd: state.cwd, token,
+      input: {
+        destination: state.initializeForm.destination.trim(),
+        ...(state.initializeForm.initialBranch.trim() ? { initialBranch: state.initializeForm.initialBranch.trim() } : {}),
+      },
+    }));
+  }
+  const name = initializeFields[state.field]!;
+  const edited = editText(state.initializeForm[name], state.caret, event);
+  return edited ? result({ ...state, initializeForm: { ...state.initializeForm, [name]: edited.value }, caret: edited.caret }) : result(state);
 }
 
 function removeKey(state: ManagerState, event: Extract<Event, { type: "key" }>): Update {

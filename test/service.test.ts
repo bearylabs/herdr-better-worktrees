@@ -115,6 +115,32 @@ test("clones directly into the canonical layout", async (context) => {
   if (nested.ok) assert.equal(nested.value.root.path, await realpath(nestedDestination));
 });
 
+test("initializes an empty repository in the canonical layout", async (context) => {
+  const base = await mkdtemp(join(tmpdir(), "herdr-canonical-init-"));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  const destination = join(base, "new-project");
+  const service = new GitWorktreeService(
+    runner,
+    join(process.cwd(), "scripts/new-worktree.sh"),
+    join(process.cwd(), "scripts/clone-canonical.sh"),
+    join(process.cwd(), "scripts/init-canonical.sh"),
+  );
+
+  const initialized = await service.initialize(base, { destination: "new-project", initialBranch: "trunk" });
+  assert.equal(initialized.ok, true, initialized.ok ? undefined : initialized.error.message);
+  if (!initialized.ok) return;
+  assert.equal(initialized.value.root.path, await realpath(destination));
+  assert.equal(initialized.value.worktrees[0]?.localDirectory, "trunk");
+  assert.equal(initialized.value.worktrees[0]?.branch, "trunk");
+  assert.equal(initialized.value.worktrees[0]?.head, "0000000000000000000000000000000000000000");
+  assert.equal(await readText(join(destination, ".git")), "gitdir: ./.bare\n");
+  assert.equal((await gitOutput(destination, ["config", "--get", "worktree.useRelativePaths"])).trim(), "true");
+  assert.match(await gitOutput(join(destination, "trunk"), ["status", "--short", "--branch"]), /No commits yet on trunk/);
+
+  const duplicate = await service.initialize(base, { destination: "new-project" });
+  assert.equal(duplicate.ok, false);
+});
+
 test("loads statuses with bounded concurrency", async () => {
   let active = 0;
   let peak = 0;

@@ -92,6 +92,28 @@ test("successful clone switches the manager to the new canonical root", async ()
   app.stop();
 });
 
+test("successful initialization switches the manager to the new canonical root", async () => {
+  const terminal = new FakeTerminal();
+  const initialized = {
+    root: { path: "/projects/new-project", commonDirectory: "/projects/new-project/.bare", name: "new-project" },
+    worktrees: [{ path: "/projects/new-project/main", localDirectory: "main", head: "0".repeat(40), branch: "main", isDetached: false, isCurrent: false, status: { kind: "loading" as const } }],
+  };
+  const service = {
+    async list() { return success(inventory); }, async loadStatuses() {}, async fetch() { return success(inventory); },
+    async create() { return success(inventory); }, async initialize() { return success(initialized); }, async remove() { throw new Error("unused"); },
+  };
+  const herdr = { async paneContext() { return { cwd: "/projects" }; }, async workspaceName() { return undefined; }, async openWorktree() {} };
+  const app = new ManagerApp(terminal, service as any, herdr, { cwd: "/projects" });
+  app.start(); await tick(); await tick();
+  terminal.key!({ key: "character", text: "n" });
+  for (const character of "new-project") terminal.key!({ key: "character", text: character });
+  terminal.key!({ key: "enter" }); await tick();
+  assert.equal(app.snapshot().cwd, "/projects/new-project");
+  assert.equal(app.snapshot().inventory?.root.path, "/projects/new-project");
+  assert.equal(app.snapshot().message, "Repository initialized");
+  app.stop();
+});
+
 test("failed open does not exit", async () => {
   const terminal = new FakeTerminal();
   const service = {
